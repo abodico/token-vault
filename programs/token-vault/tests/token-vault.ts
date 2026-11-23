@@ -1,9 +1,16 @@
 import * as anchor from "@anchor-lang/core"
 import { Program } from "@anchor-lang/core"
 import { TokenVault } from "../../../target/types/token_vault"
-import { createMint, getAccount, TOKEN_PROGRAM_ID } from "@solana/spl-token"
+import {
+    createMint,
+    getAccount,
+    getOrCreateAssociatedTokenAccount,
+    mintTo,
+    TOKEN_PROGRAM_ID,
+} from "@solana/spl-token"
 import { expect } from "chai"
 import { PublicKey, SystemProgram } from "@solana/web3.js"
+import BN from "bn.js"
 
 describe("token-vault", () => {
     const provider = anchor.AnchorProvider.env()
@@ -14,6 +21,7 @@ describe("token-vault", () => {
     let mint: PublicKey
     let vaultAuthority: PublicKey
     let vault: PublicKey
+    let userTokenAccount: PublicKey
 
     before(async () => {
         mint = await createMint(
@@ -22,6 +30,24 @@ describe("token-vault", () => {
             user,
             null,
             9,
+        )
+
+        const userAta = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            provider.wallet.payer!,
+            mint,
+            user,
+        )
+
+        userTokenAccount = userAta.address
+
+        await mintTo(
+            provider.connection,
+            provider.wallet.payer!,
+            mint,
+            userTokenAccount,
+            provider.wallet.payer!,
+            100_000_000_000n,
         )
     })
 
@@ -53,5 +79,31 @@ describe("token-vault", () => {
         expect(vaultAccount.owner.toBase58()).to.equal(
             vaultAuthority.toBase58(),
         )
+    })
+
+    it("Deposits tokens into the vault", async () => {
+        const depositAmount = new BN("30000000000")
+
+        await program.methods
+            .deposit(depositAmount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(userAccount.amount).to.equal(70_000_000_000n)
+        expect(vaultAccount.amount).to.equal(30_000_000_000n)
     })
 })
