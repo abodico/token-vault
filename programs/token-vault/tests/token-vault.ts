@@ -106,4 +106,30 @@ describe("token-vault", () => {
         expect(userAccount.amount).to.equal(70_000_000_000n)
         expect(vaultAccount.amount).to.equal(30_000_000_000n)
     })
+
+    it("Withdraws tokens from the vault", async () => {
+        const withdrawAmount = new BN("10000000000")
+
+        await program.methods
+            .withdraw(withdrawAmount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(userAccount.amount).to.equal(80_000_000_000n)
+        expect(vaultAccount.amount).to.equal(20_000_000_000n)
+    })
 })
