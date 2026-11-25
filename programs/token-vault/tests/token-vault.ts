@@ -261,4 +261,38 @@ describe("token-vault", () => {
         expect(userAccount.amount).to.equal(userBefore.amount)
         expect(vaultAccount.amount).to.equal(vaultBefore.amount)
     })
+
+    it("Should reject to withdraw tokens from the vault for the wrong PDA", async () => {
+        const withdrawAmount = new BN("10000000000")
+        const bob = Keypair.generate()
+
+        let failed = false
+        try {
+            await program.methods
+                .withdraw(withdrawAmount)
+                .accountsPartial({
+                    user: bob.publicKey,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .signers([bob])
+                .rpc()
+        } catch (error) {
+            failed = true
+        }
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(80_000_000_000n)
+        expect(vaultAccount.amount).to.equal(20_000_000_000n)
+    })
 })
