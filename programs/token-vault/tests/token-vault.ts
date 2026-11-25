@@ -2,6 +2,7 @@ import * as anchor from "@anchor-lang/core"
 import { Program } from "@anchor-lang/core"
 import { TokenVault } from "../../../target/types/token_vault"
 import {
+    createAssociatedTokenAccount,
     createMint,
     getAccount,
     getOrCreateAssociatedTokenAccount,
@@ -205,6 +206,56 @@ describe("token-vault", () => {
         } catch (err) {
             failed = true
         }
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(userBefore.amount)
+        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+    })
+
+    it("Should reject deposit tokens into the wrong vault", async () => {
+        const depositAmount = new BN("10000000000")
+
+        const fakeVault = await createAssociatedTokenAccount(
+            provider.connection,
+            provider.wallet.payer!,
+            mint,
+            vaultAuthority,
+            undefined,
+            TOKEN_PROGRAM_ID,
+            undefined,
+            true,
+        )
+
+        const userBefore = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultBefore = await getAccount(provider.connection, vault)
+
+        let failed = false
+
+        try {
+            await program.methods
+                .deposit(depositAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault: fakeVault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error) {
+            failed = true
+        }
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
 
         expect(failed).to.equal(true)
         expect(userAccount.amount).to.equal(userBefore.amount)
