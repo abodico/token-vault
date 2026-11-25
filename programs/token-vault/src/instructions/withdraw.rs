@@ -29,8 +29,10 @@ pub struct Withdraw<'info> {
     /// CHECK: This PDA is validated using its seeds and bump.
     /// It is used as the authority of the vault token account.
     #[account(
-        seeds = [b"vault-authority",
-        user.key().as_ref()],
+        seeds = [
+            b"vault-authority",
+            user.key().as_ref()
+        ],
         bump
     )]
     pub vault_authority: UncheckedAccount<'info>,

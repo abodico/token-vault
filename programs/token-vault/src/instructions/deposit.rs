@@ -16,7 +16,13 @@ pub struct Deposit<'info> {
     #[account(
         mut,
         token::authority = vault_authority,
-        token::mint = mint
+        token::mint = mint,
+        seeds = [
+        b"vault",
+        user.key().as_ref(),
+        mint.key().as_ref()
+    ],
+    bump
     )]
     pub vault: Account<'info, TokenAccount>,
 
