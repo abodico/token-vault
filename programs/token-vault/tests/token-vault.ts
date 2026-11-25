@@ -163,4 +163,51 @@ describe("token-vault", () => {
 
         expect(failed).to.equal(true)
     })
+
+    it("Should reject deposit for a token that is not related to this vault", async () => {
+        const newMint = await createMint(
+            provider.connection,
+            provider.wallet.payer!,
+            user,
+            null,
+            9,
+        )
+
+        const depositAmount = new BN("10000000000")
+        let failed = false
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        const userBefore = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultBefore = await getAccount(provider.connection, vault)
+
+        try {
+            await program.methods
+                .deposit(depositAmount)
+                .accountsPartial({
+                    user,
+                    mint: newMint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (err) {
+            failed = true
+        }
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(userBefore.amount)
+        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+    })
 })
