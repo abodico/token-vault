@@ -9,7 +9,7 @@ import {
     TOKEN_PROGRAM_ID,
 } from "@solana/spl-token"
 import { expect } from "chai"
-import { PublicKey, SystemProgram } from "@solana/web3.js"
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js"
 import BN from "bn.js"
 
 describe("token-vault", () => {
@@ -131,5 +131,36 @@ describe("token-vault", () => {
 
         expect(userAccount.amount).to.equal(80_000_000_000n)
         expect(vaultAccount.amount).to.equal(20_000_000_000n)
+    })
+
+    it("Should reject deposit from another user's token account", async () => {
+        const bob = Keypair.generate()
+
+        const bobAta = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            provider.wallet.payer!,
+            mint,
+            bob.publicKey,
+        )
+
+        let failed = false
+
+        try {
+            await program.methods
+                .deposit(new BN("1000000000"))
+                .accountsPartial({
+                    user,
+                    userTokenAccount: bobAta.address,
+                    vault,
+                    vaultAuthority,
+                    mint,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .rpc()
+        } catch (error) {
+            failed = true
+        }
+
+        expect(failed).to.equal(true)
     })
 })
