@@ -14,6 +14,7 @@ import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js"
 import BN from "bn.js"
 
 import { AnchorError } from "@anchor-lang/core"
+import { SendTransactionError } from "@solana/web3.js"
 
 describe("token-vault", () => {
     const provider = anchor.AnchorProvider.env()
@@ -394,5 +395,102 @@ describe("token-vault", () => {
             }
         }
         expect(failed).to.equal(true)
+    })
+
+    it("Should reject insufficient balance Deposit transaction", async () => {
+        const depositAmount = new BN("150000000000")
+
+        const userBefore = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultBefore = await getAccount(provider.connection, vault)
+        let failed = false
+        try {
+            await program.methods
+                .deposit(depositAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error: unknown) {
+            failed = true
+            if (error instanceof SendTransactionError) {
+                const logs =
+                    error.logs ?? (await error.getLogs(provider.connection))
+
+                expect(logs).to.include(
+                    "Program log: Error: insufficient funds",
+                )
+            } else {
+                throw error
+            }
+        }
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(userBefore.amount)
+        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+    })
+
+    it("Should reject insufficient vault balance withdraw transaction", async () => {
+        const withdrawAmount = new BN("150000000000")
+
+        const userBefore = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultBefore = await getAccount(provider.connection, vault)
+        let failed = false
+        try {
+            await program.methods
+                .withdraw(withdrawAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error: unknown) {
+            failed = true
+
+            if (error instanceof SendTransactionError) {
+                const logs =
+                    error.logs ?? (await error.getLogs(provider.connection))
+
+                expect(logs).to.include(
+                    "Program log: Error: insufficient funds",
+                )
+            } else {
+                throw error
+            }
+        }
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(userBefore.amount)
+        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
     })
 })
