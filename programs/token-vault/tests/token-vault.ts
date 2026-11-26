@@ -13,6 +13,8 @@ import { expect } from "chai"
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js"
 import BN from "bn.js"
 
+import { AnchorError } from "@anchor-lang/core"
+
 describe("token-vault", () => {
     const provider = anchor.AnchorProvider.env()
     anchor.setProvider(provider)
@@ -338,5 +340,59 @@ describe("token-vault", () => {
         expect(failed).to.equal(true)
         expect(userAccount.amount).to.equal(userBefore.amount)
         expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+    })
+
+    it("Should reject to Deposit 0 tokens into the vault", async () => {
+        const depositAmount = new BN("0")
+
+        let failed = false
+        try {
+            await program.methods
+                .deposit(depositAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error: unknown) {
+            failed = true
+            if (error instanceof AnchorError) {
+                expect(error.error.errorCode.code).to.equal("InvalidAmount")
+            } else {
+                throw error
+            }
+        }
+        expect(failed).to.equal(true)
+    })
+
+    it("Should reject to withdraw 0 tokens from the vault", async () => {
+        const withdrawAmount = new BN("0")
+
+        let failed = false
+        try {
+            await program.methods
+                .withdraw(withdrawAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error: unknown) {
+            failed = true
+            if (error instanceof AnchorError) {
+                expect(error.error.errorCode.code).to.equal("InvalidAmount")
+            } else {
+                throw error
+            }
+        }
+        expect(failed).to.equal(true)
     })
 })

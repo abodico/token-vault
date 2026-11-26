@@ -1,6 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
+use crate::error::VaultError;
+
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(mut)]
@@ -43,6 +45,8 @@ pub struct Deposit<'info> {
 }
 
 pub fn handle_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+    require!(amount > 0, VaultError::InvalidAmount);
+
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.user_token_account.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),

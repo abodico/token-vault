@@ -1,3 +1,4 @@
+use crate::error::VaultError;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
@@ -43,6 +44,8 @@ pub struct Withdraw<'info> {
 }
 
 pub fn handle_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+    require!(amount > 0, VaultError::InvalidAmount);
+
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault.to_account_info(),
         to: ctx.accounts.user_token_account.to_account_info(),
