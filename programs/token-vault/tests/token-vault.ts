@@ -493,4 +493,26 @@ describe("token-vault", () => {
         expect(userAccount.amount).to.equal(userBefore.amount)
         expect(vaultAccount.amount).to.equal(vaultBefore.amount)
     })
+
+    it("Should reject initializing the same vault twice", async () => {
+        let failed = false
+
+        try {
+            await program.methods
+                .initializeVault()
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc()
+        } catch (error) {
+            failed = true
+        }
+
+        expect(failed).to.equal(true)
+    })
 })
