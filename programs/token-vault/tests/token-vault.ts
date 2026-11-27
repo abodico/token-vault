@@ -573,4 +573,41 @@ describe("token-vault", () => {
         expect(userAccount.amount).to.equal(100_000_000_000n)
         expect(vaultAccount.amount).to.equal(0n)
     })
+
+    it("Should accumulate multiple deposits in the same vault", async () => {
+        const depositAmount = new BN("10000000000")
+
+        await program.methods
+            .deposit(depositAmount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+
+        await program.methods
+            .deposit(depositAmount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        expect(vaultAccount.amount).to.equal(20_000_000_000n)
+        expect(userAccount.amount).to.equal(80_000_000_000n)
+    })
 })
