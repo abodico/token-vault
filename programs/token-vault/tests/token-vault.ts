@@ -515,4 +515,62 @@ describe("token-vault", () => {
 
         expect(failed).to.equal(true)
     })
+
+    it("Withdraw all tokens from the vault", async () => {
+        const withdrawAmount = new BN("20000000000")
+
+        await program.methods
+            .withdraw(withdrawAmount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(userAccount.amount).to.equal(100_000_000_000n)
+        expect(vaultAccount.amount).to.equal(0n)
+    })
+
+    it("Withdraw one more token from an empty vault", async () => {
+        const withdrawAmount = new BN("1000000000")
+
+        let failed = false
+        try {
+            await program.methods
+                .withdraw(withdrawAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error) {
+            failed = true
+        }
+
+        const userAccount = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAccount = await getAccount(provider.connection, vault)
+
+        expect(failed).to.equal(true)
+        expect(userAccount.amount).to.equal(100_000_000_000n)
+        expect(vaultAccount.amount).to.equal(0n)
+    })
 })
