@@ -14,7 +14,7 @@ import {
     SendTransactionError,
     SystemProgram,
 } from "@solana/web3.js"
-import { expect } from "chai"
+import { assert, expect } from "chai"
 import BN from "bn.js"
 import { TokenVault } from "../../../target/types/token_vault"
 
@@ -114,6 +114,30 @@ describe("token-vault", () => {
         )
     })
 
+    const eventParser = new anchor.EventParser(program.programId, program.coder)
+
+    async function getTransactionEvents(signature: string) {
+        await provider.connection.confirmTransaction(signature, "confirmed")
+
+        const transaction = await provider.connection.getTransaction(
+            signature,
+            {
+                commitment: "confirmed",
+                maxSupportedTransactionVersion: 0,
+            },
+        )
+
+        if (!transaction) {
+            throw new Error(`Transaction not found. Signature: ${signature}`)
+        }
+
+        if (!transaction.meta?.logMessages) {
+            throw new Error("Transaction logs are missing")
+        }
+
+        return Array.from(eventParser.parseLogs(transaction.meta.logMessages))
+    }
+
     it("Initialize the vault", async () => {
         await initializeVault()
 
@@ -130,7 +154,7 @@ describe("token-vault", () => {
 
         const depositAmount = new BN("30000000000")
 
-        await program.methods
+        const signature = await program.methods
             .deposit(depositAmount)
             .accountsPartial({
                 user,
@@ -149,6 +173,21 @@ describe("token-vault", () => {
 
         const vaultAccount = await getAccount(provider.connection, vault)
 
+        const events = await getTransactionEvents(signature)
+
+        const depositEvent = events.find(
+            (event) => event.name === "depositEvent",
+        )
+
+        assert.isDefined(depositEvent)
+
+        expect(depositEvent.data.user.toBase58()).to.equal(user.toBase58())
+        expect(depositEvent.data.mint.toBase58()).to.equal(mint.toBase58())
+        expect(depositEvent.data.vault.toBase58()).to.equal(vault.toBase58())
+        expect(depositEvent.data.amount.toString()).to.equal(
+            depositAmount.toString(),
+        )
+
         expect(userAccount.amount).to.equal(70_000_000_000n)
         expect(vaultAccount.amount).to.equal(30_000_000_000n)
     })
@@ -158,7 +197,7 @@ describe("token-vault", () => {
 
         const withdrawAmount = new BN("10000000000")
 
-        await program.methods
+        const signature = await program.methods
             .withdraw(withdrawAmount)
             .accountsPartial({
                 user,
@@ -176,7 +215,20 @@ describe("token-vault", () => {
         )
 
         const vaultAccount = await getAccount(provider.connection, vault)
+        const events = await getTransactionEvents(signature)
 
+        const withdrawEvent = events.find(
+            (event) => event.name === "withdrawEvent",
+        )
+
+        assert.isDefined(withdrawEvent)
+
+        expect(withdrawEvent.data.user.toBase58()).to.equal(user.toBase58())
+        expect(withdrawEvent.data.mint.toBase58()).to.equal(mint.toBase58())
+        expect(withdrawEvent.data.vault.toBase58()).to.equal(vault.toBase58())
+        expect(withdrawEvent.data.amount.toString()).to.equal(
+            withdrawAmount.toString(),
+        )
         expect(userAccount.amount).to.equal(80_000_000_000n)
         expect(vaultAccount.amount).to.equal(20_000_000_000n)
     })

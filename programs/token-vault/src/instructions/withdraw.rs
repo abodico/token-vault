@@ -65,5 +65,12 @@ pub fn handle_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
 
     token::transfer_checked(cpi_context, amount, ctx.accounts.mint.decimals)?;
 
+    emit!(crate::events::WithdrawEvent {
+        user: ctx.accounts.user.key(),
+        mint: ctx.accounts.mint.key(),
+        vault: ctx.accounts.vault.key(),
+        amount
+    });
+
     Ok(())
 }
