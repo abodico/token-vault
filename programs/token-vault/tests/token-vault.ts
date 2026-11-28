@@ -362,35 +362,28 @@ describe("token-vault", () => {
     it("Should reject to Deposit 0 tokens into the vault", async () => {
         const depositAmount = new BN("0")
 
-        const userBefore = await getAccount(
-            provider.connection,
-            userTokenAccount,
-        )
-        const vaultBefore = await getAccount(provider.connection, vault)
-
-        await expectInsufficientFunds(
-            async () =>
-                await program.methods
-                    .deposit(depositAmount)
-                    .accountsPartial({
-                        user,
-                        mint,
-                        vault,
-                        vaultAuthority,
-                        tokenProgram: TOKEN_PROGRAM_ID,
-                        userTokenAccount,
-                    })
-                    .rpc(),
-        )
-
-        const userAccount = await getAccount(
-            provider.connection,
-            userTokenAccount,
-        )
-        const vaultAccount = await getAccount(provider.connection, vault)
-
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        let failed = false
+        try {
+            await program.methods
+                .deposit(depositAmount)
+                .accountsPartial({
+                    user,
+                    mint,
+                    vault,
+                    vaultAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    userTokenAccount,
+                })
+                .rpc()
+        } catch (error: unknown) {
+            failed = true
+            if (error instanceof AnchorError) {
+                expect(error.error.errorCode.code).to.equal("InvalidAmount")
+            } else {
+                throw error
+            }
+        }
+        expect(failed).to.equal(true)
     })
 
     it("Should reject to withdraw 0 tokens from the vault", async () => {
@@ -429,9 +422,8 @@ describe("token-vault", () => {
         )
 
         const vaultBefore = await getAccount(provider.connection, vault)
-        let failed = false
-        try {
-            await program.methods
+        await expectInsufficientFunds(() =>
+            program.methods
                 .deposit(depositAmount)
                 .accountsPartial({
                     user,
@@ -441,20 +433,8 @@ describe("token-vault", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     userTokenAccount,
                 })
-                .rpc()
-        } catch (error: unknown) {
-            failed = true
-            if (error instanceof SendTransactionError) {
-                const logs =
-                    error.logs ?? (await error.getLogs(provider.connection))
-
-                expect(logs).to.include(
-                    "Program log: Error: insufficient funds",
-                )
-            } else {
-                throw error
-            }
-        }
+                .rpc(),
+        )
 
         const userAccount = await getAccount(
             provider.connection,
@@ -463,7 +443,6 @@ describe("token-vault", () => {
 
         const vaultAccount = await getAccount(provider.connection, vault)
 
-        expect(failed).to.equal(true)
         expect(userAccount.amount).to.equal(userBefore.amount)
         expect(vaultAccount.amount).to.equal(vaultBefore.amount)
     })
@@ -477,9 +456,8 @@ describe("token-vault", () => {
         )
 
         const vaultBefore = await getAccount(provider.connection, vault)
-        let failed = false
-        try {
-            await program.methods
+        await expectInsufficientFunds(() =>
+            program.methods
                 .withdraw(withdrawAmount)
                 .accountsPartial({
                     user,
@@ -489,21 +467,8 @@ describe("token-vault", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     userTokenAccount,
                 })
-                .rpc()
-        } catch (error: unknown) {
-            failed = true
-
-            if (error instanceof SendTransactionError) {
-                const logs =
-                    error.logs ?? (await error.getLogs(provider.connection))
-
-                expect(logs).to.include(
-                    "Program log: Error: insufficient funds",
-                )
-            } else {
-                throw error
-            }
-        }
+                .rpc(),
+        )
 
         const userAccount = await getAccount(
             provider.connection,
@@ -512,7 +477,6 @@ describe("token-vault", () => {
 
         const vaultAccount = await getAccount(provider.connection, vault)
 
-        expect(failed).to.equal(true)
         expect(userAccount.amount).to.equal(userBefore.amount)
         expect(vaultAccount.amount).to.equal(vaultBefore.amount)
     })
