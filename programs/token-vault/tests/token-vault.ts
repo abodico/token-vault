@@ -1,6 +1,5 @@
 import * as anchor from "@anchor-lang/core"
-import { Program } from "@anchor-lang/core"
-import { TokenVault } from "../../../target/types/token_vault"
+import { AnchorError, Program } from "@anchor-lang/core"
 import {
     createAssociatedTokenAccount,
     createMint,
@@ -9,12 +8,15 @@ import {
     mintTo,
     TOKEN_PROGRAM_ID,
 } from "@solana/spl-token"
+import {
+    Keypair,
+    PublicKey,
+    SendTransactionError,
+    SystemProgram,
+} from "@solana/web3.js"
 import { expect } from "chai"
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js"
 import BN from "bn.js"
-
-import { AnchorError } from "@anchor-lang/core"
-import { SendTransactionError } from "@solana/web3.js"
+import { TokenVault } from "../../../target/types/token_vault"
 
 async function expectInsufficientFunds(action: () => Promise<unknown>) {
     try {
@@ -22,6 +24,7 @@ async function expectInsufficientFunds(action: () => Promise<unknown>) {
         expect.fail("Expected transaction to fail")
     } catch (error: unknown) {
         const provider = anchor.AnchorProvider.env()
+
         if (error instanceof SendTransactionError) {
             const logs =
                 error.logs ?? (await error.getLogs(provider.connection))
@@ -32,9 +35,11 @@ async function expectInsufficientFunds(action: () => Promise<unknown>) {
         }
     }
 }
+
 describe("token-vault", () => {
     const provider = anchor.AnchorProvider.env()
     anchor.setProvider(provider)
+
     const program = anchor.workspace.TokenVault as Program<TokenVault>
     const user = provider.wallet.publicKey
 
@@ -43,7 +48,37 @@ describe("token-vault", () => {
     let vault: PublicKey
     let userTokenAccount: PublicKey
 
-    before(async () => {
+    async function initializeVault() {
+        await program.methods
+            .initializeVault()
+            .accountsPartial({
+                user,
+                vaultAuthority,
+                vault,
+                mint,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc()
+    }
+
+    async function initializeVaultWithDeposit(amount: BN) {
+        await initializeVault()
+
+        await program.methods
+            .deposit(amount)
+            .accountsPartial({
+                user,
+                mint,
+                vault,
+                vaultAuthority,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                userTokenAccount,
+            })
+            .rpc()
+    }
+
+    beforeEach(async () => {
         mint = await createMint(
             provider.connection,
             provider.wallet.payer!,
@@ -69,9 +104,6 @@ describe("token-vault", () => {
             provider.wallet.payer!,
             100_000_000_000n,
         )
-    })
-
-    it("Initialize the vault", async () => {
         ;[vaultAuthority] = PublicKey.findProgramAddressSync(
             [Buffer.from("vault-authority"), user.toBuffer()],
             program.programId,
@@ -80,18 +112,10 @@ describe("token-vault", () => {
             [Buffer.from("vault"), user.toBuffer(), mint.toBuffer()],
             program.programId,
         )
+    })
 
-        await program.methods
-            .initializeVault()
-            .accountsPartial({
-                user,
-                vaultAuthority,
-                vault,
-                mint,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc()
+    it("Initialize the vault", async () => {
+        await initializeVault()
 
         const vaultAccount = await getAccount(provider.connection, vault)
 
@@ -102,6 +126,8 @@ describe("token-vault", () => {
     })
 
     it("Deposits tokens into the vault", async () => {
+        await initializeVault()
+
         const depositAmount = new BN("30000000000")
 
         await program.methods
@@ -128,6 +154,8 @@ describe("token-vault", () => {
     })
 
     it("Withdraws tokens from the vault", async () => {
+        await initializeVaultWithDeposit(new BN("30000000000"))
+
         const withdrawAmount = new BN("10000000000")
 
         await program.methods
@@ -154,6 +182,8 @@ describe("token-vault", () => {
     })
 
     it("Should reject deposit from another user's token account", async () => {
+        await initializeVault()
+
         const bob = Keypair.generate()
 
         const bobAta = await getOrCreateAssociatedTokenAccount(
@@ -177,7 +207,7 @@ describe("token-vault", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                 })
                 .rpc()
-        } catch (error) {
+        } catch {
             failed = true
         }
 
@@ -185,6 +215,8 @@ describe("token-vault", () => {
     })
 
     it("Should reject deposit for a token that is not related to this vault", async () => {
+        await initializeVault()
+
         const newMint = await createMint(
             provider.connection,
             provider.wallet.payer!,
@@ -194,14 +226,6 @@ describe("token-vault", () => {
         )
 
         const depositAmount = new BN("10000000000")
-        let failed = false
-
-        const userAccount = await getAccount(
-            provider.connection,
-            userTokenAccount,
-        )
-
-        const vaultAccount = await getAccount(provider.connection, vault)
 
         const userBefore = await getAccount(
             provider.connection,
@@ -209,6 +233,8 @@ describe("token-vault", () => {
         )
 
         const vaultBefore = await getAccount(provider.connection, vault)
+
+        let failed = false
 
         try {
             await program.methods
@@ -222,16 +248,25 @@ describe("token-vault", () => {
                     userTokenAccount,
                 })
                 .rpc()
-        } catch (err) {
+        } catch {
             failed = true
         }
 
+        const userAfter = await getAccount(
+            provider.connection,
+            userTokenAccount,
+        )
+
+        const vaultAfter = await getAccount(provider.connection, vault)
+
         expect(failed).to.equal(true)
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        expect(userAfter.amount).to.equal(userBefore.amount)
+        expect(vaultAfter.amount).to.equal(vaultBefore.amount)
     })
 
     it("Should reject deposit tokens into the wrong vault", async () => {
+        await initializeVault()
+
         const depositAmount = new BN("10000000000")
 
         const fakeVault = await createAssociatedTokenAccount(
@@ -266,26 +301,30 @@ describe("token-vault", () => {
                     userTokenAccount,
                 })
                 .rpc()
-        } catch (error) {
+        } catch {
             failed = true
         }
-        const userAccount = await getAccount(
+
+        const userAfter = await getAccount(
             provider.connection,
             userTokenAccount,
         )
 
-        const vaultAccount = await getAccount(provider.connection, vault)
+        const vaultAfter = await getAccount(provider.connection, vault)
 
         expect(failed).to.equal(true)
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        expect(userAfter.amount).to.equal(userBefore.amount)
+        expect(vaultAfter.amount).to.equal(vaultBefore.amount)
     })
 
     it("Should reject to withdraw tokens from the vault for the wrong PDA", async () => {
+        await initializeVaultWithDeposit(new BN("20000000000"))
+
         const withdrawAmount = new BN("10000000000")
         const bob = Keypair.generate()
 
         let failed = false
+
         try {
             await program.methods
                 .withdraw(withdrawAmount)
@@ -299,7 +338,7 @@ describe("token-vault", () => {
                 })
                 .signers([bob])
                 .rpc()
-        } catch (error) {
+        } catch {
             failed = true
         }
 
@@ -316,8 +355,11 @@ describe("token-vault", () => {
     })
 
     it("Should reject to withdraw tokens from the vault using the wrong Authority", async () => {
+        await initializeVaultWithDeposit(new BN("20000000000"))
+
         const withdrawAmount = new BN("10000000000")
         const bob = Keypair.generate()
+
         const [bobAuthority] = PublicKey.findProgramAddressSync(
             [Buffer.from("vault-authority"), bob.publicKey.toBuffer()],
             program.programId,
@@ -331,6 +373,7 @@ describe("token-vault", () => {
         const vaultBefore = await getAccount(provider.connection, vault)
 
         let failed = false
+
         try {
             await program.methods
                 .withdraw(withdrawAmount)
@@ -343,26 +386,29 @@ describe("token-vault", () => {
                     userTokenAccount,
                 })
                 .rpc()
-        } catch (error) {
+        } catch {
             failed = true
         }
 
-        const userAccount = await getAccount(
+        const userAfter = await getAccount(
             provider.connection,
             userTokenAccount,
         )
 
-        const vaultAccount = await getAccount(provider.connection, vault)
+        const vaultAfter = await getAccount(provider.connection, vault)
 
         expect(failed).to.equal(true)
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        expect(userAfter.amount).to.equal(userBefore.amount)
+        expect(vaultAfter.amount).to.equal(vaultBefore.amount)
     })
 
-    it("Should reject to Deposit 0 tokens into the vault", async () => {
+    it("Should reject to deposit 0 tokens into the vault", async () => {
+        await initializeVault()
+
         const depositAmount = new BN("0")
 
         let failed = false
+
         try {
             await program.methods
                 .deposit(depositAmount)
@@ -377,19 +423,24 @@ describe("token-vault", () => {
                 .rpc()
         } catch (error: unknown) {
             failed = true
+
             if (error instanceof AnchorError) {
                 expect(error.error.errorCode.code).to.equal("InvalidAmount")
             } else {
                 throw error
             }
         }
+
         expect(failed).to.equal(true)
     })
 
     it("Should reject to withdraw 0 tokens from the vault", async () => {
+        await initializeVault()
+
         const withdrawAmount = new BN("0")
 
         let failed = false
+
         try {
             await program.methods
                 .withdraw(withdrawAmount)
@@ -404,16 +455,20 @@ describe("token-vault", () => {
                 .rpc()
         } catch (error: unknown) {
             failed = true
+
             if (error instanceof AnchorError) {
                 expect(error.error.errorCode.code).to.equal("InvalidAmount")
             } else {
                 throw error
             }
         }
+
         expect(failed).to.equal(true)
     })
 
     it("Should reject insufficient balance Deposit transaction", async () => {
+        await initializeVault()
+
         const depositAmount = new BN("150000000000")
 
         const userBefore = await getAccount(
@@ -422,6 +477,7 @@ describe("token-vault", () => {
         )
 
         const vaultBefore = await getAccount(provider.connection, vault)
+
         await expectInsufficientFunds(() =>
             program.methods
                 .deposit(depositAmount)
@@ -436,18 +492,20 @@ describe("token-vault", () => {
                 .rpc(),
         )
 
-        const userAccount = await getAccount(
+        const userAfter = await getAccount(
             provider.connection,
             userTokenAccount,
         )
 
-        const vaultAccount = await getAccount(provider.connection, vault)
+        const vaultAfter = await getAccount(provider.connection, vault)
 
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        expect(userAfter.amount).to.equal(userBefore.amount)
+        expect(vaultAfter.amount).to.equal(vaultBefore.amount)
     })
 
     it("Should reject insufficient vault balance withdraw transaction", async () => {
+        await initializeVaultWithDeposit(new BN("20000000000"))
+
         const withdrawAmount = new BN("150000000000")
 
         const userBefore = await getAccount(
@@ -456,6 +514,7 @@ describe("token-vault", () => {
         )
 
         const vaultBefore = await getAccount(provider.connection, vault)
+
         await expectInsufficientFunds(() =>
             program.methods
                 .withdraw(withdrawAmount)
@@ -470,18 +529,20 @@ describe("token-vault", () => {
                 .rpc(),
         )
 
-        const userAccount = await getAccount(
+        const userAfter = await getAccount(
             provider.connection,
             userTokenAccount,
         )
 
-        const vaultAccount = await getAccount(provider.connection, vault)
+        const vaultAfter = await getAccount(provider.connection, vault)
 
-        expect(userAccount.amount).to.equal(userBefore.amount)
-        expect(vaultAccount.amount).to.equal(vaultBefore.amount)
+        expect(userAfter.amount).to.equal(userBefore.amount)
+        expect(vaultAfter.amount).to.equal(vaultBefore.amount)
     })
 
     it("Should reject initializing the same vault twice", async () => {
+        await initializeVault()
+
         let failed = false
 
         try {
@@ -496,7 +557,7 @@ describe("token-vault", () => {
                     systemProgram: SystemProgram.programId,
                 })
                 .rpc()
-        } catch (error) {
+        } catch {
             failed = true
         }
 
@@ -504,6 +565,8 @@ describe("token-vault", () => {
     })
 
     it("Withdraw all tokens from the vault", async () => {
+        await initializeVaultWithDeposit(new BN("20000000000"))
+
         const withdrawAmount = new BN("20000000000")
 
         await program.methods
@@ -530,11 +593,12 @@ describe("token-vault", () => {
     })
 
     it("Withdraw one more token from an empty vault", async () => {
+        await initializeVault()
+
         const withdrawAmount = new BN("1000000000")
 
-        let failed = false
-        try {
-            await program.methods
+        await expectInsufficientFunds(() =>
+            program.methods
                 .withdraw(withdrawAmount)
                 .accountsPartial({
                     user,
@@ -544,10 +608,8 @@ describe("token-vault", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     userTokenAccount,
                 })
-                .rpc()
-        } catch (error) {
-            failed = true
-        }
+                .rpc(),
+        )
 
         const userAccount = await getAccount(
             provider.connection,
@@ -556,12 +618,13 @@ describe("token-vault", () => {
 
         const vaultAccount = await getAccount(provider.connection, vault)
 
-        expect(failed).to.equal(true)
         expect(userAccount.amount).to.equal(100_000_000_000n)
         expect(vaultAccount.amount).to.equal(0n)
     })
 
     it("Should accumulate multiple deposits in the same vault", async () => {
+        await initializeVault()
+
         const depositAmount = new BN("10000000000")
 
         await program.methods
@@ -589,6 +652,7 @@ describe("token-vault", () => {
             .rpc()
 
         const vaultAccount = await getAccount(provider.connection, vault)
+
         const userAccount = await getAccount(
             provider.connection,
             userTokenAccount,
