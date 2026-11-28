@@ -60,5 +60,12 @@ pub fn handle_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
     token::transfer_checked(cpi_context, amount, ctx.accounts.mint.decimals)?;
 
+    emit!(crate::events::DepositEvent {
+        user: ctx.accounts.user.key(),
+        mint: ctx.accounts.mint.key(),
+        vault: ctx.accounts.vault.key(),
+        amount,
+    });
+
     Ok(())
 }

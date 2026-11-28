@@ -1,11 +1,13 @@
 pub mod constants;
 pub mod error;
+pub mod events;
 pub mod instructions;
 pub mod state;
 
 use anchor_lang::prelude::*;
 
 pub use constants::*;
+pub use events::*;
 pub use instructions::*;
 
 declare_id!("Cc7hoS89FAXLbGXXU4hBALCLkG6HamoNhAXjVxBNpJdf");
